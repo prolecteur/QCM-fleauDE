@@ -58,18 +58,18 @@
 
                 <div>
                     <label class="text-white font-semibold block mb-2">Rôle</label>
-                    <select id="roleSelect" class="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:outline-none focus:ring-2 focus:ring-purple-400">
+                    <select id="roleSelect" class="w-full px-4 py-3 rounded-lg bg-white/20 text-black font-bold border border-white/30 focus:outline-none focus:ring-2 focus:ring-purple-400">
                         <option value="player">Joueur</option>
                         <option value="host">Hôte de partie</option>
                         <option value="admin">Admin</option>
                     </select>
                 </div>
 
-                <div id="adminCodeDiv" class="hidden">
-                    <label class="text-white font-semibold block mb-2">Code Admin</label>
-                    <input type="password" id="adminCodeInput" 
+                <div id="playerCodeDiv" class="hidden">
+                    <label class="text-white font-semibold block mb-2">Code de la Partie</label>
+                    <input type="text" id="playerRoomCodeInput" 
                         class="w-full px-4 py-3 rounded-lg bg-white/20 text-white placeholder-white/60 border border-white/30 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                        placeholder="Code : admin123">
+                        placeholder="Entrez le code de la partie">
                 </div>
 
                 <button onclick="login()" class="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 rounded-lg hover:from-purple-600 hover:to-pink-600 transition shadow-lg">
@@ -107,16 +107,21 @@
             </div>
         </div>
 
-        <div class="max-w-6xl mx-auto grid md:grid-cols-2 gap-6">
+        <div class="max-w-6xl mx-auto grid gap-6">
             <!-- Joueurs -->
             <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
                 <h2 class="text-2xl font-bold text-white mb-4">👥 Joueurs (<span id="playerCount">0</span>)</h2>
                 <div id="playersList" class="space-y-2 max-h-96 overflow-y-auto">
                     <!-- Joueurs générés par JS -->
                 </div>
+                
+                <!-- Bouton commencer (visible uniquement pour l'hôte/admin) -->
+                <button onclick="startGameForAll()" id="startGameBtn" class="w-full mt-6 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold py-3 rounded-lg hover:from-green-600 hover:to-emerald-600 transition shadow-lg hidden">
+                    🎮 Commencer la Partie
+                </button>
             </div>
 
-            <!-- Gestion des questions -->
+            <!-- Gestion des questions (visible uniquement pour host/admin) -->
             <div id="questionsPanel" class="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hidden">
                 <h2 class="text-2xl font-bold text-white mb-4">⚙️ Questions (<span id="questionCount">0</span>)</h2>
                 
@@ -155,10 +160,6 @@
                 <div id="questionsList" class="space-y-2 max-h-64 overflow-y-auto mb-4">
                     <!-- Questions générées par JS -->
                 </div>
-
-                <button onclick="startGame()" id="startBtn" class="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 rounded-lg hover:from-purple-600 hover:to-pink-600 transition shadow-lg hidden">
-                    ▶️ Démarrer le Jeu
-                </button>
             </div>
         </div>
     </div>
@@ -171,6 +172,9 @@
                     <span>Question <span id="currentQ">1</span> / <span id="totalQ">1</span></span>
                     <span class="font-bold">Score: <span id="currentScore">0</span></span>
                 </div>
+                <div class="flex justify-between text-white mb-2">
+                    <span class="text-2xl font-bold">⏱️ <span id="timer">15</span>s</span>
+                </div>
                 <div class="w-full bg-white/20 rounded-full h-2">
                     <div id="progressBar" class="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
                 </div>
@@ -181,6 +185,10 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="optionsGrid">
                     <!-- Options générées par JS -->
+                </div>
+
+                <div id="correctAnswerDisplay" class="hidden mt-6 p-4 bg-green-500/30 border border-green-500 rounded-xl">
+                    <p class="text-white text-center font-bold">✅ Bonne réponse: <span id="correctAnswerText"></span></p>
                 </div>
             </div>
         </div>
@@ -202,7 +210,7 @@
     <script>
         // Variables globales
         const AVATARS = ['🧙‍♂️', '🦸‍♀️', '🤖', '👨‍🚀', '🧛‍♂️', '🧚‍♀️', '🦹‍♂️', '👾'];
-        const ADMIN_CODE = 'admin123';
+        const ADMIN_CODE = 'egm2024secure';
         
         let currentUser = null;
         let players = [];
@@ -212,13 +220,16 @@
         let correctAnswerIndex = 0;
         let hasAnswered = false;
         let musicOn = true;
+        let roomCode = null;
+        let timerInterval = null;
+        let timeLeft = 15;
 
         // Initialisation
         document.addEventListener('DOMContentLoaded', () => {
             initAvatars();
             
             document.getElementById('roleSelect').addEventListener('change', (e) => {
-                document.getElementById('adminCodeDiv').classList.toggle('hidden', e.target.value !== 'admin');
+                document.getElementById('playerCodeDiv').classList.toggle('hidden', e.target.value !== 'player');
             });
         });
 
@@ -244,15 +255,20 @@
         function login() {
             const pseudo = document.getElementById('pseudoInput').value.trim();
             const role = document.getElementById('roleSelect').value;
-            const adminCode = document.getElementById('adminCodeInput').value;
+            const playerRoomCode = document.getElementById('playerRoomCodeInput').value.trim().toUpperCase();
 
             if (!pseudo) {
                 alert('Veuillez entrer un pseudo !');
                 return;
             }
 
-            if (role === 'admin' && adminCode !== ADMIN_CODE) {
-                alert('Code admin incorrect !');
+            if (role === 'player' && !playerRoomCode) {
+                alert('Veuillez entrer le code de la partie !');
+                return;
+            }
+
+            if (role === 'player' && playerRoomCode !== roomCode) {
+                alert('Code de partie invalide !');
                 return;
             }
 
@@ -267,8 +283,8 @@
             players.push(currentUser);
             
             if (role === 'host' || role === 'admin') {
-                const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-                document.getElementById('roomCode').textContent = code;
+                roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                document.getElementById('roomCode').textContent = roomCode;
                 document.getElementById('roomCodeDiv').classList.remove('hidden');
                 document.getElementById('questionsPanel').classList.remove('hidden');
             }
@@ -304,6 +320,11 @@
                 `;
                 list.appendChild(div);
             });
+
+            // Afficher le bouton commencer si host/admin et qu'il y a des questions
+            if ((currentUser.role === 'host' || currentUser.role === 'admin') && questions.length > 0) {
+                document.getElementById('startGameBtn').classList.remove('hidden');
+            }
         }
 
         function kickPlayer(playerId) {
@@ -366,28 +387,36 @@
                 list.appendChild(div);
             });
 
-            document.getElementById('startBtn').classList.toggle('hidden', questions.length === 0);
+            // Afficher le bouton commencer si on a des questions
+            if (questions.length > 0) {
+                document.getElementById('startGameBtn').classList.remove('hidden');
+            }
         }
 
-        function startGame() {
+        function startGameForAll() {
             if (questions.length === 0) {
                 alert('Ajoutez au moins une question !');
                 return;
             }
             currentQuestionIndex = 0;
             hasAnswered = false;
+            timeLeft = 15;
             showScreen('gameScreen');
             displayQuestion();
         }
 
         function displayQuestion() {
             hasAnswered = false;
+            timeLeft = 15;
+            document.getElementById('correctAnswerDisplay').classList.add('hidden');
+            
             const q = questions[currentQuestionIndex];
             document.getElementById('currentQ').textContent = currentQuestionIndex + 1;
             document.getElementById('totalQ').textContent = questions.length;
             document.getElementById('currentScore').textContent = currentUser.score;
             document.getElementById('progressBar').style.width = ((currentQuestionIndex + 1) / questions.length * 100) + '%';
             document.getElementById('questionText').textContent = q.question;
+            document.getElementById('timer').textContent = timeLeft;
 
             const grid = document.getElementById('optionsGrid');
             grid.innerHTML = '';
@@ -399,38 +428,82 @@
                 btn.onclick = () => answerQuestion(idx, btn);
                 grid.appendChild(btn);
             });
+
+            // Démarrer le chrono
+            startTimer();
+        }
+
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timer').textContent = timeLeft;
+
+                // À 0 seconde, fin du temps pour répondre
+                if (timeLeft === 0) {
+                    if (!hasAnswered) {
+                        hasAnswered = true;
+                        disableAllButtons();
+                    }
+                    showCorrectAnswer();
+                }
+
+                // À -5 secondes (5 secondes après affichage réponse), passer à la question suivante
+                if (timeLeft === -5) {
+                    clearInterval(timerInterval);
+                    if (currentQuestionIndex < questions.length - 1) {
+                        currentQuestionIndex++;
+                        displayQuestion();
+                    } else {
+                        showResults();
+                    }
+                }
+            }, 1000);
+        }
+
+        function disableAllButtons() {
+            const buttons = document.querySelectorAll('#optionsGrid button');
+            buttons.forEach(b => {
+                b.disabled = true;
+                b.classList.remove('hover:bg-white/30', 'hover:scale-105');
+            });
+        }
+
+        function showCorrectAnswer() {
+            const q = questions[currentQuestionIndex];
+            const buttons = document.querySelectorAll('#optionsGrid button');
+            
+            buttons.forEach((b, i) => {
+                if (i === q.correct) {
+                    b.className = 'bg-green-500 text-white font-semibold py-4 px-6 rounded-xl';
+                }
+            });
+
+            document.getElementById('correctAnswerText').textContent = q.options[q.correct];
+            document.getElementById('correctAnswerDisplay').classList.remove('hidden');
         }
 
         function answerQuestion(idx, btn) {
-            if (hasAnswered) return;
+            if (hasAnswered || timeLeft <= 0) return;
             hasAnswered = true;
 
             const q = questions[currentQuestionIndex];
             const isCorrect = idx === q.correct;
 
-            const buttons = document.querySelectorAll('#optionsGrid button');
-            buttons.forEach((b, i) => {
-                b.disabled = true;
-                if (i === q.correct) {
-                    b.className = 'bg-green-500 text-white font-semibold py-4 px-6 rounded-xl';
-                } else if (i === idx) {
-                    b.className = 'bg-red-500 text-white font-semibold py-4 px-6 rounded-xl';
-                }
-            });
+            disableAllButtons();
 
             if (isCorrect) {
-                currentUser.score += 100;
-                players = players.map(p => p.id === currentUser.id ? {...p, score: p.score + 100} : p);
+                btn.className = 'bg-green-500 text-white font-semibold py-4 px-6 rounded-xl';
+                currentUser.score += 1;
+                players = players.map(p => p.id === currentUser.id ? {...p, score: p.score + 1} : p);
+                document.getElementById('currentScore').textContent = currentUser.score;
+            } else {
+                btn.className = 'bg-red-500 text-white font-semibold py-4 px-6 rounded-xl';
             }
 
-            setTimeout(() => {
-                if (currentQuestionIndex < questions.length - 1) {
-                    currentQuestionIndex++;
-                    displayQuestion();
-                } else {
-                    showResults();
-                }
-            }, 1500);
+            // Afficher la bonne réponse
+            showCorrectAnswer();
         }
 
         function showResults() {
@@ -459,9 +532,11 @@
         }
 
         function backToLobby() {
+            if (timerInterval) clearInterval(timerInterval);
             currentQuestionIndex = 0;
             players = players.map(p => ({...p, score: 0}));
             currentUser.score = 0;
+            timeLeft = 15;
             showScreen('lobbyScreen');
             updateLobby();
         }
@@ -481,9 +556,12 @@
         }
 
         function logout() {
+            if (timerInterval) clearInterval(timerInterval);
             players = [];
             questions = [];
             currentUser = null;
+            roomCode = null;
+            timeLeft = 15;
             showScreen('loginScreen');
         }
 
