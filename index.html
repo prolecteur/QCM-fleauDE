@@ -223,9 +223,10 @@
         let roomCode = null;
         let timerInterval = null;
         let timeLeft = 15;
+        let currentRoomData = null;
 
         // Initialisation
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             initAvatars();
             
             document.getElementById('roleSelect').addEventListener('change', (e) => {
@@ -252,7 +253,7 @@
             btn.className = 'text-4xl p-3 rounded-lg transition bg-purple-500 scale-110';
         }
 
-        function login() {
+        async function login() {
             const pseudo = document.getElementById('pseudoInput').value.trim();
             const role = document.getElementById('roleSelect').value;
             const playerRoomCode = document.getElementById('playerRoomCodeInput').value.trim().toUpperCase();
@@ -262,14 +263,30 @@
                 return;
             }
 
-            if (role === 'player' && !playerRoomCode) {
-                alert('Veuillez entrer le code de la partie !');
-                return;
-            }
-
-            if (role === 'player' && playerRoomCode !== roomCode) {
-                alert('Code de partie invalide !');
-                return;
+            if (role === 'player') {
+                if (!playerRoomCode) {
+                    alert('Veuillez entrer le code de la partie !');
+                    return;
+                }
+                
+                // Vérifier si la partie existe dans le stockage partagé
+                try {
+                    const roomData = await window.storage.get(`room:${playerRoomCode}`, true);
+                    if (!roomData) {
+                        alert('Code de partie invalide ! Aucune partie trouvée avec ce code.\nDemandez à l\'hôte de vérifier le code.');
+                        return;
+                    }
+                    
+                    // Charger les données de la partie
+                    currentRoomData = JSON.parse(roomData.value);
+                    roomCode = playerRoomCode;
+                    questions = currentRoomData.questions || [];
+                    players = currentRoomData.players || [];
+                    
+                } catch (error) {
+                    alert('Code de partie invalide ! Aucune partie trouvée avec ce code.\nDemandez à l\'hôte de vérifier le code.');
+                    return;
+                }
             }
 
             currentUser = {
@@ -287,10 +304,69 @@
                 document.getElementById('roomCode').textContent = roomCode;
                 document.getElementById('roomCodeDiv').classList.remove('hidden');
                 document.getElementById('questionsPanel').classList.remove('hidden');
+                
+                // Sauvegarder la partie dans le stockage partagé
+                await saveRoomData();
+            } else {
+                // Sauvegarder la partie mise à jour avec le nouveau joueur
+                await saveRoomData();
             }
 
             showScreen('lobbyScreen');
             updateLobby();
+            
+            // Démarrer la synchronisation pour les joueurs
+            if (role === 'player') {
+                startSync();
+            }
+        }
+
+        async function saveRoomData() {
+            if (!roomCode) return;
+            
+            try {
+                const roomData = {
+                    code: roomCode,
+                    players: players,
+                    questions: questions,
+                    lastUpdate: Date.now()
+                };
+                await window.storage.set(`room:${roomCode}`, JSON.stringify(roomData), true);
+            } catch (error) {
+                console.error('Erreur de sauvegarde:', error);
+            }
+        }
+
+        async function loadRoomData() {
+            if (!roomCode) return;
+            
+            try {
+                const roomData = await window.storage.get(`room:${roomCode}`, true);
+                if (roomData) {
+                    const data = JSON.parse(roomData.value);
+                    
+                    // Mettre à jour les joueurs (sauf l'utilisateur actuel)
+                    const otherPlayers = data.players.filter(p => p.id !== currentUser.id);
+                    const currentUserData = players.find(p => p.id === currentUser.id);
+                    players = [...otherPlayers, currentUserData];
+                    
+                    // Mettre à jour les questions
+                    questions = data.questions || [];
+                    
+                    updateLobby();
+                }
+            } catch (error) {
+                console.error('Erreur de chargement:', error);
+            }
+        }
+
+        function startSync() {
+            // Synchroniser toutes les 2 secondes
+            setInterval(async () => {
+                if (currentUser && currentUser.role === 'player' && roomCode) {
+                    await loadRoomData();
+                }
+            }, 2000);
         }
 
         function updateLobby() {
@@ -325,11 +401,18 @@
             if ((currentUser.role === 'host' || currentUser.role === 'admin') && questions.length > 0) {
                 document.getElementById('startGameBtn').classList.remove('hidden');
             }
+            
+            // Afficher le code de salle si c'est un joueur et qu'il a rejoint une partie
+            if (currentUser.role === 'player' && roomCode) {
+                document.getElementById('roomCode').textContent = roomCode;
+                document.getElementById('roomCodeDiv').classList.remove('hidden');
+            }
         }
 
         function kickPlayer(playerId) {
             players = players.filter(p => p.id !== playerId);
             updateLobby();
+            saveRoomData();
         }
 
         function selectCorrect(idx) {
@@ -370,6 +453,7 @@
             selectCorrect(0);
 
             updateQuestionsList();
+            saveRoomData();
         }
 
         function updateQuestionsList() {
@@ -555,13 +639,24 @@
             }
         }
 
-        function logout() {
+        async function logout() {
             if (timerInterval) clearInterval(timerInterval);
+            
+            // Si on est l'hôte, on peut supprimer la partie
+            if (currentUser && (currentUser.role === 'host' || currentUser.role === 'admin') && roomCode) {
+                try {
+                    await window.storage.delete(`room:${roomCode}`, true);
+                } catch (error) {
+                    console.error('Erreur de suppression:', error);
+                }
+            }
+            
             players = [];
             questions = [];
             currentUser = null;
             roomCode = null;
             timeLeft = 15;
+            currentRoomData = null;
             showScreen('loginScreen');
         }
 
