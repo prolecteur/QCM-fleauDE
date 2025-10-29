@@ -243,6 +243,20 @@
     </div>
 
     <script>
+        // ============================================
+        // 🔥 CONFIGURATION FIREBASE - À MODIFIER UNE SEULE FOIS
+        // ============================================
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCdj_R6kKTH70wM3vu3Uzl_6tAy_ZzTKMw",
+            authDomain: "qcm-fleau.firebaseapp.com",
+            databaseURL: "https://qcm-fleau-default-rtdb.firebaseio.com",
+            projectId: "qcm-fleau",
+            storageBucket: "qcm-fleau.firebasestorage.app",
+            messagingSenderId: "455524435079",
+            appId: "1:455524435079:web:42c29a777879342ee7a422"
+};
+        // ============================================
+
         // Variables globales
         const AVATARS = ['🧙‍♂️', '🦸‍♀️', '🤖', '👨‍🚀', '🧛‍♂️', '🧚‍♀️', '🦹‍♂️', '👾'];
         
@@ -254,7 +268,7 @@
         let correctAnswerIndex = 0;
         let musicOn = true;
         let timerInterval = null;
-        let timeLeft = 15;
+        let timeLeft = 10;
         let currentQuestionIndex = 0;
         let hasAnswered = false;
         let roomRef = null;
@@ -262,13 +276,34 @@
 
         // Initialisation
         document.addEventListener('DOMContentLoaded', () => {
-            showScreen('firebaseConfig');
+            // Initialiser Firebase automatiquement
+            autoInitFirebase();
             initAvatars();
             
             document.getElementById('roleSelect').addEventListener('change', (e) => {
                 document.getElementById('playerCodeDiv').classList.toggle('hidden', e.target.value !== 'player');
             });
         });
+
+        function autoInitFirebase() {
+            // Vérifier si la config est remplie
+            if (FIREBASE_CONFIG.apiKey === "VOTRE_API_KEY" || !FIREBASE_CONFIG.databaseURL) {
+                console.warn('⚠️ Configuration Firebase manquante');
+                showScreen('firebaseConfig');
+                return;
+            }
+
+            try {
+                firebase.initializeApp(FIREBASE_CONFIG);
+                db = firebase.database();
+                console.log('✅ Firebase connecté automatiquement!');
+                showScreen('loginScreen');
+            } catch (error) {
+                console.error('❌ Erreur Firebase:', error);
+                alert('❌ Erreur de connexion Firebase. Vérifiez la configuration dans le code.');
+                showScreen('firebaseConfig');
+            }
+        }
 
         function initAvatars() {
             const grid = document.getElementById('avatarGrid');
@@ -307,9 +342,11 @@
             }
 
             try {
-                firebase.initializeApp(firebaseConfig);
+                if (firebase.apps.length === 0) {
+                    firebase.initializeApp(firebaseConfig);
+                }
                 db = firebase.database();
-                console.log('✅ Firebase connecté!');
+                console.log('✅ Firebase connecté manuellement!');
                 showScreen('loginScreen');
             } catch (error) {
                 alert('❌ Erreur de connexion Firebase: ' + error.message);
